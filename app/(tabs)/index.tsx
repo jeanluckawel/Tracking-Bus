@@ -26,6 +26,7 @@ export default function App() {
     initNFC();
     return () => NfcManager.stop();
   }, []);
+  
 
   const scanTag = async () => {
     try {
