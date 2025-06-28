@@ -1,70 +1,145 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Button, StyleSheet, Text, View } from 'react-native';
-import NfcManager, { Ndef, NfcTech } from 'react-native-nfc-manager';
+import React, { useState } from 'react';
+import {
+  Button,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native';
+import NfcManager, { NfcTech } from 'react-native-nfc-manager';
 
-// Initialiser le gestionnaire NFC
-function initNFC() {
-  NfcManager.start()
-    .then(() => console.log('NFC Ready'))
-    .catch((err) => console.warn('Erreur init NFC:', err));
-}
+NfcManager.start();
 
-// Convertir un UID hexadécimal en décimal
-function uidToDecimal(uidHex) {
-  if (!uidHex) return '';
-  try {
-    return BigInt('0x' + uidHex).toString(10);
-  } catch (e) {
-    return 'Erreur de conversion';
-  }
-}
+export default function EmployeeBadge() {
+  const [employee, setEmployee] = useState(null);
 
-export default function App() {
-  const [nfcData, setNfcData] = useState(null);
-
-  useEffect(() => {
-    initNFC();
-    return () => NfcManager.stop();
-  }, []);
-  
-
-  const scanTag = async () => {
+  const scanCard = async () => {
     try {
-      await NfcManager.requestTechnology(NfcTech.Ndef);
-      const tag = await NfcManager.getTag();
-      setNfcData(tag);
-      console.log('NFC TAG:', tag);
+      await NfcManager.cancelTechnologyRequest();
+      await NfcManager.requestTechnology(NfcTech.MifareClassic);
 
-      if (tag.ndefMessage) {
-        const message = tag.ndefMessage
-          .map(record => Ndef.text.decodePayload(record.payload))
-          .join('\n');
-        Alert.alert('Message NFC', message);
+      const tag = await NfcManager.getTag();
+      const uidHex = tag?.id;
+      if (!uidHex) return alert('UID non détecté');
+
+      const uidDec = parseInt(uidHex, 16).toString();
+
+      const response = await fetch(`https://zoomemoire.net/TrackingApi/public/${uidDec}`);
+      const result = await response.json();
+
+      if (result.status && result.data) {
+        setEmployee(result.data);
+      } else {
+        alert("Employé introuvable.");
       }
-    } catch (err) {
-      console.warn('Erreur NFC:', err);
+    } catch (error) {
+      console.warn(error);
+      alert("Erreur NFC.");
     } finally {
       NfcManager.cancelTechnologyRequest();
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Lecteur NFC</Text>
-      <Button title="Scanner une carte NFC" onPress={scanTag} />
-      {nfcData && (
-        <View style={styles.result}>
-          <Text>UID (décimal) : {uidToDecimal(nfcData.id)}</Text>
-          <Text>Type : {nfcData.type}</Text>
-          <Text>Contenu brut : {JSON.stringify(nfcData)}</Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Button title="📲 Scanner carte NFC" onPress={scanCard} />
+
+      {employee && (
+        <View style={styles.badge}>
+          <Text style={styles.header}>🏢 MON ENTREPRISE</Text>
+
+          <View style={styles.row}>
+            <Image
+              source={{ uri: employee.photo || 'https://via.placeholder.com/100' }}
+              style={styles.photo}
+            />
+            <View style={styles.infoBlock}>
+              <Text style={styles.name}>
+                {employee.EMP_FIRSTNAME} {employee.EMP_SURNAME}
+              </Text>
+              <Text style={styles.text}>🆔 Matricule : {employee.EMP_EMPNO}</Text>
+              <Text style={styles.text}>💼 Fonction : {getTitle(employee.TITLE_CODEID)}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.text}>📇 ID : {employee.EMP_ID}</Text>
+          <Text style={styles.text}>🎂 Né(e) le : {formatDate(employee.EMP_BIRTHDATE)}</Text>
+          <Text style={styles.text}>🔑 UID NFC : {employee.tags?.[0]?.TAG_CODE}</Text>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
+// Format "YYYY-MM-DD" → "DD/MM/YYYY"
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'Non renseignée';
+  const d = new Date(dateStr);
+  return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1)
+    .toString()
+    .padStart(2, '0')}/${d.getFullYear()}`;
+};
+
+// Exemple simple de mappage des fonctions
+const getTitle = (code) => {
+  switch (code) {
+    case 1:
+      return 'Agent de sécurité';
+    case 2:
+      return 'Chef de site';
+    default:
+      return 'Fonction inconnue';
+  }
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  result: { marginTop: 30, backgroundColor: '#f0f0f0', padding: 10, borderRadius: 10 },
+  container: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#f9f9f9',
+  },
+  badge: {
+    marginTop: 30,
+    backgroundColor: '#ffffff',
+    padding: 20,
+    borderRadius: 15,
+    width: '100%',
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  header: {
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#1d3557',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  photo: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    backgroundColor: '#ccc',
+    marginRight: 15,
+  },
+  infoBlock: {
+    flex: 1,
+  },
+  name: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2a2a2a',
+    marginBottom: 5,
+  },
+  text: {
+    fontSize: 16,
+    color: '#333',
+    marginVertical: 2,
+  },
 });
